@@ -28,9 +28,10 @@ Where:
 2. **RESEARCH_0002_17-09-2025_wed_project-level-custom-prompts.md** - **Project-Level Custom Prompts Research**
 3. **RESEARCH_0003_18-09-2025_thu_sub-agent-feature.md** - **Sub-agent architecture research**
 4. **RESEARCH_0004_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Implementation**
+5. **RESEARCH_0005_18-09-2025_thu_codex-hooks-implementation.md** - **Codex Hooks Implementation Research**
 
 
-Next document number: **0005**
+Next document number: **0006**
 
 ## Instructions for Claude Code
 
