@@ -1249,7 +1249,7 @@ impl ChatComposer {
     fn process_custom_prompt_with_args(
         &self,
         content: &str,
-        _prompt: &CustomPrompt,
+        prompt: &CustomPrompt,
         args: &[String],
     ) -> String {
         if args.is_empty() {
@@ -1261,7 +1261,16 @@ impl ChatComposer {
         for (i, arg) in args.iter().enumerate() {
             result.push_str(&format!("argument_{}: {}\n", i + 1, arg));
         }
-        result.push_str("\n");
+
+        // Add metadata from frontmatter
+        if let Some(hint) = &prompt.argument_hint {
+            result.push_str(&format!("argument-hint: {hint}\n"));
+        }
+        if let Some(desc) = &prompt.description {
+            result.push_str(&format!("description: {desc}\n"));
+        }
+
+        result.push('\n');
         result.push_str(content);
 
         result
@@ -2371,6 +2380,8 @@ mod tests {
             path: "/tmp/my-prompt.md".to_string().into(),
             content: prompt_text.to_string(),
             category: None,
+            argument_hint: None,
+            description: None,
             template_args: None,
             template_syntax: None,
         }]);

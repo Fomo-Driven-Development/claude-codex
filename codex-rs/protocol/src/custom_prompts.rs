@@ -10,6 +10,7 @@ pub struct CustomPrompt {
     pub content: String,               // file contents (frontmatter stripped)
     pub category: Option<String>,      // directory name for organization
     pub argument_hint: Option<String>, // argument-hint from frontmatter
+    pub description: Option<String>,   // description from frontmatter
     // New fields for template support
     pub template_args: Option<Vec<TemplateArg>>,
     pub template_syntax: Option<TemplateSyntax>,

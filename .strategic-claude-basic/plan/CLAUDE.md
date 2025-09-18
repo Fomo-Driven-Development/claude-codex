@@ -51,8 +51,9 @@ This ensures phase-specific plans are easily identifiable and searchable.
 2. **TEST_0001_17-09-2025_wed_project-level-custom-prompts.md** - **Project-Level Custom Prompts Test Plan**
 3. **PLAN_0002_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Implementation Plan**
 4. **TEST_0002_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Test Plan**
+5. **PLAN_0005_18-09-2025_thu_codex-hooks-implementation.md** - **Codex Hooks Implementation Plan**
 
-Next document number: **0003**
+Next document number: **0006**
 
 ## Plan Type Guidelines
 

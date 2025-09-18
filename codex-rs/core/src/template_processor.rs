@@ -15,7 +15,7 @@ pub enum TemplateSyntax {
 pub fn process_simple_template(content: &str, args: &[String]) -> Result<String, TemplateError> {
     let mut result = content.to_string();
     for (i, arg) in args.iter().enumerate() {
-        let placeholder = format!("{{{}}}", i);
+        let placeholder = format!("{{{i}}}");
         result = result.replace(&placeholder, arg);
     }
     Ok(result)
@@ -28,7 +28,7 @@ pub fn process_askama_template(
     // Simple variable substitution for {{ variable }} syntax
     let mut result = content.to_string();
     for (key, value) in args {
-        let placeholder = format!("{{{{ {} }}}}", key);
+        let placeholder = format!("{{{{ {key} }}}}");
         result = result.replace(&placeholder, value);
     }
     Ok(result)
@@ -46,10 +46,10 @@ pub fn process_template(
             // For now, use simple numeric names: arg0, arg1, etc.
             let mut named_args = HashMap::new();
             for (i, arg) in args.iter().enumerate() {
-                named_args.insert(format!("arg{}", i), arg.clone());
+                named_args.insert(format!("arg{i}"), arg.clone());
             }
             // Also support 'subject' as first argument for backward compatibility
-            if let Some(first_arg) = args.get(0) {
+            if let Some(first_arg) = args.first() {
                 named_args.insert("subject".to_string(), first_arg.clone());
             }
             process_askama_template(content, &named_args)

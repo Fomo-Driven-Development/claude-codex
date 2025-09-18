@@ -63,13 +63,14 @@ pub async fn discover_prompts_in_excluding(
             Ok(s) => s,
             Err(_) => continue,
         };
-        let (argument_hint, content) = parse_frontmatter(&raw_content);
+        let (description, argument_hint, content) = parse_frontmatter(&raw_content);
         out.push(CustomPrompt {
             name,
             path,
             content,
             category: None,
             argument_hint,
+            description,
             template_args: None,
             template_syntax: None,
         });
@@ -146,63 +147,70 @@ pub async fn discover_prompts_with_project_support(
 }
 
 /// Parse frontmatter from a markdown file content
-/// Returns (argument_hint, content_with_filtered_frontmatter)
-fn parse_frontmatter(content: &str) -> (Option<String>, String) {
-    // Check if content starts with frontmatter delimiter
-    if !content.starts_with("---\n") {
-        return (None, content.to_string());
-    }
+/// Returns (description, argument_hint, content_without_frontmatter)
+fn parse_frontmatter(content: &str) -> (Option<String>, Option<String>, String) {
+    // Check if content starts with frontmatter delimiter (handle both Unix and Windows line endings)
+    let skip_bytes = if content.starts_with("---\n") {
+        4
+    } else if content.starts_with("---\r\n") {
+        5
+    } else {
+        return (None, None, content.to_string());
+    };
 
-    // Find the closing frontmatter delimiter
-    let content_after_start = &content[4..]; // Skip opening "---\n"
-    if let Some(end_pos) = content_after_start.find("\n---\n") {
+    // Find the closing frontmatter delimiter (handle both line ending types)
+    let content_after_start = &content[skip_bytes..];
+    let (closing_delimiter, delimiter_len) = if content_after_start.contains("\n---\n") {
+        ("\n---\n", 5)
+    } else if content_after_start.contains("\r\n---\r\n") {
+        ("\r\n---\r\n", 7)
+    } else {
+        return (None, None, content.to_string());
+    };
+
+    if let Some(end_pos) = content_after_start.find(closing_delimiter) {
         let frontmatter = &content_after_start[..end_pos];
-        let body_content = &content_after_start[end_pos + 5..]; // Skip "\n---\n"
+        let body_content = &content_after_start[end_pos + delimiter_len..];
 
-        // Trim leading newline from body content if present
-        let body_content = body_content.strip_prefix('\n').unwrap_or(body_content);
+        // Trim leading newline/CRLF from body content if present
+        let body_content = body_content
+            .strip_prefix("\r\n")
+            .or_else(|| body_content.strip_prefix('\n'))
+            .unwrap_or(body_content);
 
-        // Parse argument-hint from frontmatter
-        let argument_hint = frontmatter
-            .lines()
-            .find(|line| line.trim_start().starts_with("argument-hint:"))
-            .and_then(|line| {
-                let colon_pos = line.find(':')?;
-                let value = line[colon_pos + 1..].trim();
-                if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                }
-            });
-
-        // Filter frontmatter to keep only description and argument-hint
-        let filtered_frontmatter: Vec<String> = frontmatter
-            .lines()
-            .filter(|line| {
-                let trimmed = line.trim_start();
-                trimmed.starts_with("description:") || trimmed.starts_with("argument-hint:")
-            })
-            .map(|line| line.to_string())
-            .collect();
-
-        // Reconstruct content with filtered frontmatter
-        let content_with_filtered_frontmatter = if filtered_frontmatter.is_empty() {
-            // No frontmatter to keep, return just the body
-            body_content.to_string()
-        } else {
-            // Reconstruct with filtered frontmatter
-            format!(
-                "---\n{}\n---\n{}",
-                filtered_frontmatter.join("\n"),
-                body_content
-            )
+        // Helper function to parse a field value from frontmatter
+        let parse_field = |field_name: &str| -> Option<String> {
+            frontmatter
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{field_name}:")))
+                .and_then(|line| {
+                    let colon_pos = line.find(':')?;
+                    let value = line[colon_pos + 1..].trim();
+                    // Handle quoted values
+                    let value = if (value.starts_with('"') && value.ends_with('"'))
+                        || (value.starts_with('\'') && value.ends_with('\''))
+                    {
+                        &value[1..value.len() - 1]
+                    } else {
+                        value
+                    };
+                    if value.is_empty() {
+                        None
+                    } else {
+                        Some(value.to_string())
+                    }
+                })
         };
 
-        (argument_hint, content_with_filtered_frontmatter)
+        // Parse description and argument-hint from frontmatter
+        let description = parse_field("description");
+        let argument_hint = parse_field("argument-hint");
+
+        // Return only the body content (frontmatter completely removed)
+        (description, argument_hint, body_content.to_string())
     } else {
         // No closing delimiter found, treat as regular content
-        (None, content.to_string())
+        (None, None, content.to_string())
     }
 }
 
@@ -261,40 +269,35 @@ mod tests {
     #[test]
     fn test_parse_frontmatter_with_argument_hint() {
         let content = "---\ndescription: \"test\"\nargument-hint: <subject>\n---\n\nHello world";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, Some("test".to_string()));
         assert_eq!(argument_hint, Some("<subject>".to_string()));
-        assert_eq!(
-            filtered_content,
-            "---\ndescription: \"test\"\nargument-hint: <subject>\n---\nHello world"
-        );
+        assert_eq!(filtered_content, "Hello world");
     }
 
     #[test]
     fn test_parse_frontmatter_filters_out_unwanted_fields() {
         let content = "---\ndescription: \"test\"\nargument-hint: <subject>\nallowed-tools: Read\nmodel: claude-opus\n---\n\nHello world";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, Some("test".to_string()));
         assert_eq!(argument_hint, Some("<subject>".to_string()));
-        assert_eq!(
-            filtered_content,
-            "---\ndescription: \"test\"\nargument-hint: <subject>\n---\nHello world"
-        );
+        assert_eq!(filtered_content, "Hello world");
     }
 
     #[test]
     fn test_parse_frontmatter_no_argument_hint() {
         let content = "---\ndescription: \"test\"\n---\n\nHello world";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, Some("test".to_string()));
         assert_eq!(argument_hint, None);
-        assert_eq!(
-            filtered_content,
-            "---\ndescription: \"test\"\n---\nHello world"
-        );
+        assert_eq!(filtered_content, "Hello world");
     }
 
     #[test]
     fn test_parse_frontmatter_only_unwanted_fields() {
         let content = "---\nallowed-tools: Read\nmodel: claude-opus\n---\n\nHello world";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, None);
         assert_eq!(argument_hint, None);
         assert_eq!(filtered_content, "Hello world");
     }
@@ -302,7 +305,8 @@ mod tests {
     #[test]
     fn test_parse_frontmatter_no_frontmatter() {
         let content = "Hello world";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, None);
         assert_eq!(argument_hint, None);
         assert_eq!(filtered_content, "Hello world");
     }
@@ -310,8 +314,40 @@ mod tests {
     #[test]
     fn test_parse_frontmatter_incomplete() {
         let content = "---\ndescription: \"test\"\nno closing delimiter";
-        let (argument_hint, filtered_content) = parse_frontmatter(content);
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+        assert_eq!(description, None);
         assert_eq!(argument_hint, None);
         assert_eq!(filtered_content, content);
+    }
+
+    #[test]
+    fn test_parse_frontmatter_real_world_example() {
+        let content = r#"---
+description: "Analyze plans for potential blocking issues by examining codebase, dependencies, and related documents"
+argument-hint: <plan_file(s)_or_NNNN>
+allowed-tools: Read(./**), Task, Bash(git:*, find:*, grep:*), Glob, Grep
+model: claude-opus-4-1
+---
+
+You are tasked with analyzing implementation plans for potential blocking issues by examining the codebase, technical dependencies, related summaries, and research documents.
+
+**Plan input provided:** $1"#;
+
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+
+        assert_eq!(description, Some("Analyze plans for potential blocking issues by examining codebase, dependencies, and related documents".to_string()));
+        assert_eq!(argument_hint, Some("<plan_file(s)_or_NNNN>".to_string()));
+        assert_eq!(filtered_content, "You are tasked with analyzing implementation plans for potential blocking issues by examining the codebase, technical dependencies, related summaries, and research documents.\n\n**Plan input provided:** $1");
+    }
+
+    #[test]
+    fn test_parse_frontmatter_windows_line_endings() {
+        let content = "---\r\ndescription: \"Analyze plans for potential blocking issues\"\r\nargument-hint: <plan_file>\r\nmodel: claude-opus-4-1\r\n---\r\n\r\nYou are tasked with analyzing implementation plans.\r\n\r\n**Plan input provided:** $1";
+
+        let (description, argument_hint, filtered_content) = parse_frontmatter(content);
+
+        assert_eq!(description, Some("Analyze plans for potential blocking issues".to_string()));
+        assert_eq!(argument_hint, Some("<plan_file>".to_string()));
+        assert_eq!(filtered_content, "You are tasked with analyzing implementation plans.\r\n\r\n**Plan input provided:** $1");
     }
 }
