@@ -1436,10 +1436,20 @@ async fn submission_loop(
                 let sub_id = sub.id.clone();
 
                 let custom_prompts: Vec<CustomPrompt> =
-                    if let Some(dir) = crate::custom_prompts::default_prompts_dir() {
-                        crate::custom_prompts::discover_prompts_in(&dir).await
+                    if let Some(global_dir) = crate::custom_prompts::default_prompts_dir() {
+                        crate::custom_prompts::discover_prompts_with_project_support(
+                            &global_dir,
+                            &config.cwd,
+                        )
+                        .await
                     } else {
-                        Vec::new()
+                        // Fallback: scan project directory only if global dir unavailable
+                        if let Some(git_root) = crate::git_info::get_git_repo_root(&config.cwd) {
+                            let project_dir = git_root.join(".codex/prompts");
+                            crate::custom_prompts::discover_prompts_in(&project_dir).await
+                        } else {
+                            Vec::new()
+                        }
                     };
 
                 let event = Event {

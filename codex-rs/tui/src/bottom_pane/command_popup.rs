@@ -114,7 +114,10 @@ impl CommandPopup {
                         name: format!("/{}", self.prompts[i].name),
                         match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                         is_current: false,
-                        description: Some("send saved prompt".to_string()),
+                        description: match &self.prompts[i].category {
+                            Some(category) => Some(format!("send saved prompt ({})", category)),
+                            None => Some("send saved prompt".to_string()),
+                        },
                     },
                 })
                 .collect()
@@ -215,7 +218,10 @@ impl WidgetRef for CommandPopup {
                         name: format!("/{}", self.prompts[i].name),
                         match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                         is_current: false,
-                        description: Some("send saved prompt".to_string()),
+                        description: match &self.prompts[i].category {
+                            Some(category) => Some(format!("send saved prompt ({})", category)),
+                            None => Some("send saved prompt".to_string()),
+                        },
                     },
                 })
                 .collect()
@@ -292,11 +298,13 @@ mod tests {
                 name: "foo".to_string(),
                 path: "/tmp/foo.md".to_string().into(),
                 content: "hello from foo".to_string(),
+                category: None,
             },
             CustomPrompt {
                 name: "bar".to_string(),
                 path: "/tmp/bar.md".to_string().into(),
                 content: "hello from bar".to_string(),
+                category: None,
             },
         ];
         let popup = CommandPopup::new(prompts);
@@ -319,6 +327,7 @@ mod tests {
             name: "init".to_string(),
             path: "/tmp/init.md".to_string().into(),
             content: "should be ignored".to_string(),
+            category: None,
         }]);
         let items = popup.filtered_items();
         let has_collision_prompt = items.into_iter().any(|it| match it {

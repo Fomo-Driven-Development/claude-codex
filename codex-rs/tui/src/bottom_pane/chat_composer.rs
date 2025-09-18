@@ -2333,6 +2333,7 @@ mod tests {
             name: "my-prompt".to_string(),
             path: "/tmp/my-prompt.md".to_string().into(),
             content: prompt_text.to_string(),
+            category: None,
         }]);
 
         type_chars_humanlike(

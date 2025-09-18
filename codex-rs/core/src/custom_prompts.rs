@@ -35,7 +35,7 @@ pub async fn discover_prompts_in_excluding(
         let is_file = entry
             .file_type()
             .await
-            .map(|ft| ft.is_file())
+            .map(|ft| ft.is_file() || ft.is_symlink())
             .unwrap_or(false);
         if !is_file {
             continue;
@@ -67,10 +67,78 @@ pub async fn discover_prompts_in_excluding(
             name,
             path,
             content,
+            category: None,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+/// Discover prompts including subdirectories with namespace support
+pub async fn discover_prompts_with_directories(base_dir: &Path) -> Vec<CustomPrompt> {
+    let mut prompts = Vec::new();
+
+    // Scan root level prompts (flat commands)
+    let root_prompts = discover_prompts_in_excluding(base_dir, &HashSet::new()).await;
+    for mut prompt in root_prompts {
+        prompt.category = None; // Root level prompts have no category
+        prompts.push(prompt);
+    }
+
+    // Scan subdirectories (namespaced commands)
+    if let Ok(mut entries) = fs::read_dir(base_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry
+                .file_type()
+                .await
+                .map(|ft| ft.is_dir() || ft.is_symlink())
+                .unwrap_or(false)
+            {
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                let subdir_prompts =
+                    discover_prompts_in_excluding(&entry.path(), &HashSet::new()).await;
+
+                for mut prompt in subdir_prompts {
+                    prompt.name = format!("{}:{}", dir_name, prompt.name);
+                    prompt.category = Some(dir_name.clone());
+                    prompts.push(prompt);
+                }
+            }
+        }
+    }
+
+    prompts.sort_by(|a, b| a.name.cmp(&b.name));
+    prompts
+}
+
+/// Discover prompts from both global and project-level directories
+pub async fn discover_prompts_with_project_support(
+    global_dir: &Path,
+    project_cwd: &Path,
+) -> Vec<CustomPrompt> {
+    let mut prompts = Vec::new();
+    let mut exclude = HashSet::new();
+
+    // 1. Global prompts (existing behavior)
+    prompts.extend(discover_prompts_in_excluding(global_dir, &exclude).await);
+
+    // Build exclusion set from global prompts
+    for prompt in &prompts {
+        exclude.insert(prompt.name.clone());
+    }
+
+    // 2. Project prompts (new behavior)
+    if let Some(git_root) = crate::git_info::get_git_repo_root(project_cwd) {
+        let project_prompt_dir = git_root.join(".codex/prompts");
+        let project_prompts = discover_prompts_with_directories(&project_prompt_dir).await;
+
+        // Project prompts override global ones (later sources take precedence)
+        prompts.retain(|p| !project_prompts.iter().any(|pp| pp.name == p.name));
+        prompts.extend(project_prompts);
+    }
+
+    prompts.sort_by(|a, b| a.name.cmp(&b.name));
+    prompts
 }
 
 #[cfg(test)]
