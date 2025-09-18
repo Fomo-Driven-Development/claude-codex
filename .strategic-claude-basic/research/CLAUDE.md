@@ -29,9 +29,10 @@ Where:
 3. **RESEARCH_0003_18-09-2025_thu_sub-agent-feature.md** - **Sub-agent architecture research**
 4. **RESEARCH_0004_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Implementation**
 5. **RESEARCH_0005_18-09-2025_thu_codex-hooks-implementation.md** - **Codex Hooks Implementation Research**
+6. **RESEARCH_0006_18-09-2025_thu_notification-hooks-upgrade.md** - **Notification Hooks Upgrade Research**
 
 
-Next document number: **0006**
+Next document number: **0007**
 
 ## Instructions for Claude Code
 

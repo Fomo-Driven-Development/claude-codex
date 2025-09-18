@@ -52,8 +52,10 @@ This ensures phase-specific plans are easily identifiable and searchable.
 3. **PLAN_0002_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Implementation Plan**
 4. **TEST_0002_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Test Plan**
 5. **PLAN_0005_18-09-2025_thu_codex-hooks-implementation.md** - **Codex Hooks Implementation Plan**
+6. **PLAN_0006_18-09-2025_thu_notification-hooks-upgrade.md** - **Notification Hooks Upgrade Implementation Plan**
+7. **TEST_0006_18-09-2025_thu_notification-hooks-upgrade.md** - **Notification Hooks Upgrade Test Plan**
 
-Next document number: **0006**
+Next document number: **0007**
 
 ## Plan Type Guidelines
 
