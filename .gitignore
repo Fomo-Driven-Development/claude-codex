@@ -27,11 +27,6 @@ result
 *.swp
 *~
 
-# cli tools
-CLAUDE.md
-.claude/
-.codex/prompts/
-
 # caches
 .cache/
 .turbo/
