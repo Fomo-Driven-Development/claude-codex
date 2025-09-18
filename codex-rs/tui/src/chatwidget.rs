@@ -19,6 +19,8 @@ use codex_core::protocol::EventMsg;
 use codex_core::protocol::ExecApprovalRequestEvent;
 use codex_core::protocol::ExecCommandBeginEvent;
 use codex_core::protocol::ExecCommandEndEvent;
+use codex_core::protocol::HookApprovalType;
+use codex_core::protocol::HookNotificationRequest;
 use codex_core::protocol::InputItem;
 use codex_core::protocol::InputMessageKind;
 use codex_core::protocol::ListCustomPromptsResponseEvent;
@@ -169,6 +171,11 @@ impl ChatWidget {
     fn flush_answer_stream_with_separator(&mut self) {
         let sink = AppEventHistorySink(self.app_event_tx.clone());
         let _ = self.stream.finalize(true, &sink);
+    }
+
+    fn trigger_notification_hook(&mut self, notification: HookNotificationRequest) {
+        self.app_event_tx
+            .send(AppEvent::ExecuteNotificationHooks { notification });
     }
     // --- Small event handlers ---
     fn on_session_configured(&mut self, event: codex_core::protocol::SessionConfiguredEvent) {
@@ -539,9 +546,19 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
         // Emit the proposed command into history (like proposed patches)
         self.add_to_history(history_cell::new_proposed_command(&ev.command));
+        let reason = ev.reason.clone();
         let command = shlex::try_join(ev.command.iter().map(|s| s.as_str()))
             .unwrap_or_else(|_| ev.command.join(" "));
-        self.notify(Notification::ExecApprovalRequested { command });
+        self.notify(Notification::ExecApprovalRequested {
+            command: command.clone(),
+        });
+        self.trigger_notification_hook(HookNotificationRequest::ToolPermission {
+            approval_type: HookApprovalType::Exec,
+            tool_name: "Bash".to_string(),
+            command: Some(command),
+            changes: None,
+            reason,
+        });
 
         let request = ApprovalRequest::Exec {
             id,
@@ -564,6 +581,7 @@ impl ChatWidget {
             &self.config.cwd,
         ));
 
+        let reason = ev.reason.clone();
         let request = ApprovalRequest::ApplyPatch {
             id,
             reason: ev.reason,
@@ -574,6 +592,18 @@ impl ChatWidget {
         self.notify(Notification::EditApprovalRequested {
             cwd: self.config.cwd.clone(),
             changes: ev.changes.keys().cloned().collect(),
+        });
+        let change_paths: Vec<String> = ev
+            .changes
+            .keys()
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        self.trigger_notification_hook(HookNotificationRequest::ToolPermission {
+            approval_type: HookApprovalType::Patch,
+            tool_name: "ApplyPatch".to_string(),
+            command: None,
+            changes: Some(change_paths),
+            reason,
         });
     }
 

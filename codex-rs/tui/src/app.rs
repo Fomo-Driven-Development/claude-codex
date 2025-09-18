@@ -13,6 +13,8 @@ use codex_core::ConversationManager;
 use codex_core::config::Config;
 use codex_core::config::persist_model_selection;
 use codex_core::model_family::find_family_for_model;
+use codex_core::protocol::HookNotificationRequest;
+use codex_core::protocol::Op;
 use codex_core::protocol::TokenUsage;
 use codex_core::protocol_config_types::ReasoningEffort as ReasoningEffortConfig;
 use color_eyre::eyre::Result;
@@ -31,6 +33,7 @@ use std::thread;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::time::Instant as TokioInstant;
 // use uuid::Uuid;
 
 pub(crate) struct App {
@@ -59,6 +62,9 @@ pub(crate) struct App {
 
     // Esc-backtracking state grouped
     pub(crate) backtrack: crate::app_backtrack::BacktrackState,
+
+    /// Tracks when the last interactive input occurred for idle timeout detection.
+    last_user_input: TokioInstant,
 }
 
 impl App {
@@ -137,6 +143,7 @@ impl App {
             has_emitted_history_lines: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
+            last_user_input: TokioInstant::now(),
         };
 
         let tui_events = tui.event_stream();
@@ -144,12 +151,47 @@ impl App {
 
         tui.frame_requester().schedule_frame();
 
+        let idle_timeout = app.config.idle_timeout_seconds;
+        let idle_sleep = tokio::time::sleep(Duration::from_secs(1));
+        tokio::pin!(idle_sleep);
+        if idle_timeout > 0 {
+            idle_sleep
+                .as_mut()
+                .reset(app.last_user_input + Duration::from_secs(idle_timeout));
+        }
+
         while select! {
             Some(event) = app_event_rx.recv() => {
-                app.handle_event(tui, event).await?
+                let keep_running = app.handle_event(tui, event).await?;
+                if keep_running && idle_timeout > 0 {
+                    idle_sleep
+                        .as_mut()
+                        .reset(app.last_user_input + Duration::from_secs(idle_timeout));
+                }
+                keep_running
             }
             Some(event) = tui_events.next() => {
-                app.handle_tui_event(tui, event).await?
+                let keep_running = app.handle_tui_event(tui, event).await?;
+                if keep_running && idle_timeout > 0 {
+                    idle_sleep
+                        .as_mut()
+                        .reset(app.last_user_input + Duration::from_secs(idle_timeout));
+                }
+                keep_running
+            }
+            _ = idle_sleep.as_mut(), if idle_timeout > 0 => {
+                if app
+                    .last_user_input
+                    .elapsed()
+                    .as_secs()
+                    >= idle_timeout
+                {
+                    app.handle_idle_timeout().await?;
+                }
+                idle_sleep
+                    .as_mut()
+                    .reset(app.last_user_input + Duration::from_secs(idle_timeout));
+                true
             }
         } {}
         tui.terminal.clear()?;
@@ -166,9 +208,13 @@ impl App {
         } else {
             match event {
                 TuiEvent::Key(key_event) => {
+                    if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                        self.last_user_input = TokioInstant::now();
+                    }
                     self.handle_key_event(tui, key_event).await;
                 }
                 TuiEvent::Paste(pasted) => {
+                    self.last_user_input = TokioInstant::now();
                     // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
                     // but tui-textarea expects \n. Normalize CR to LF.
                     // [tui-textarea]: https://github.com/rhysd/tui-textarea/blob/4d18622eeac13b309e0ff6a55a46ac6706da68cf/src/textarea.rs#L782-L783
@@ -213,6 +259,7 @@ impl App {
                 };
                 self.chat_widget = ChatWidget::new(init, self.server.clone());
                 tui.frame_requester().schedule_frame();
+                self.last_user_input = TokioInstant::now();
             }
             AppEvent::InsertHistoryCell(cell) => {
                 let mut cell_transcript = cell.transcript_lines();
@@ -275,6 +322,10 @@ impl App {
                 return Ok(false);
             }
             AppEvent::CodexOp(op) => self.chat_widget.submit_op(op),
+            AppEvent::ExecuteNotificationHooks { notification } => {
+                self.chat_widget
+                    .submit_op(Op::ExecuteNotificationHooks { notification });
+            }
             AppEvent::DiffResult(text) => {
                 // Clear the in-progress state in the bottom pane
                 self.chat_widget.on_diff_complete();
@@ -349,6 +400,22 @@ impl App {
             }
         }
         Ok(true)
+    }
+
+    async fn handle_idle_timeout(&mut self) -> Result<()> {
+        let idle_seconds = self.config.idle_timeout_seconds;
+        if idle_seconds == 0 {
+            return Ok(());
+        }
+
+        let notification = HookNotificationRequest::PromptIdleTimeout {
+            idle_duration_seconds: idle_seconds,
+        };
+        self.chat_widget
+            .submit_op(Op::ExecuteNotificationHooks { notification });
+
+        self.last_user_input = TokioInstant::now();
+        Ok(())
     }
 
     pub(crate) fn token_usage(&self) -> codex_core::protocol::TokenUsage {
@@ -459,6 +526,7 @@ mod tests {
             enhanced_keys_supported: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
+            last_user_input: TokioInstant::now(),
         }
     }
 

@@ -1,7 +1,12 @@
-# Example hooks configuration for Codex
-# This demonstrates how to configure Stop hooks that execute when sessions complete
 
-[hooks.stop.session-notify]
-command = "$CODEX_PROJECT_DIR/.codex/hooks/strategic/stop-session-notify.py"
+# Notification hooks - triggered on permission requests and idle timeout
+[hooks.notification.tool-permission]
+command = "notify-send"
+args = ["Claude Code", "Permission needed: {{approval_type}}"]
+timeout_ms = 5000
+enabled = true
+
+[hooks.notification.general-notify]
+command = "$CODEX_PROJECT_DIR/.strategic-claude-basic/core/hooks/notification-hook-codex.py"
 timeout_ms = 30000
 enabled = true

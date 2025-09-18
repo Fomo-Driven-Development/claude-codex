@@ -5,6 +5,7 @@ use codex_file_search::FileMatch;
 use crate::history_cell::HistoryCell;
 
 use codex_core::protocol::AskForApproval;
+use codex_core::protocol::HookNotificationRequest;
 use codex_core::protocol::SandboxPolicy;
 use codex_core::protocol_config_types::ReasoningEffort;
 
@@ -65,4 +66,9 @@ pub(crate) enum AppEvent {
 
     /// Forwarded conversation history snapshot from the current conversation.
     ConversationHistory(ConversationPathResponseEvent),
+
+    /// Execute notification hooks with the provided payload.
+    ExecuteNotificationHooks {
+        notification: HookNotificationRequest,
+    },
 }

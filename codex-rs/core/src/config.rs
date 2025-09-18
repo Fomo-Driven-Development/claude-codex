@@ -47,6 +47,8 @@ pub const GPT_5_CODEX_MEDIUM_MODEL: &str = "gpt-5-codex";
 /// the context window.
 pub(crate) const PROJECT_DOC_MAX_BYTES: usize = 32 * 1024; // 32 KiB
 
+const DEFAULT_IDLE_TIMEOUT_SECONDS: u64 = 60;
+
 pub(crate) const CONFIG_TOML_FILE: &str = "config.toml";
 
 /// Application configuration loaded from disk and merged with overrides.
@@ -195,6 +197,9 @@ pub struct Config {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: bool,
+
+    /// Idle timeout in seconds. Defaults to 60; set to 0 to disable idle notifications.
+    pub idle_timeout_seconds: u64,
 
     /// Hook configuration for session lifecycle events.
     pub hooks: HooksConfig,
@@ -710,6 +715,9 @@ pub struct ConfigToml {
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: Option<bool>,
 
+    /// Idle timeout in seconds for prompting idle notifications. Set to 0 to disable.
+    pub idle_timeout_seconds: Option<u64>,
+
     /// Hook configuration for session lifecycle events.
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
@@ -947,10 +955,8 @@ impl Config {
         let history = cfg.history.unwrap_or_default();
 
         // Discover hooks with project-level support
-        let hooks = discover_hooks_with_project_support(
-            &cfg.hooks.unwrap_or_default(),
-            &resolved_cwd,
-        );
+        let hooks =
+            discover_hooks_with_project_support(&cfg.hooks.unwrap_or_default(), &resolved_cwd);
 
         let tools_web_search_request = override_tools_web_search_request
             .or(cfg.tools.as_ref().and_then(|t| t.web_search))
@@ -1067,6 +1073,9 @@ impl Config {
                 .as_ref()
                 .map(|t| t.notifications.clone())
                 .unwrap_or_default(),
+            idle_timeout_seconds: cfg
+                .idle_timeout_seconds
+                .unwrap_or(DEFAULT_IDLE_TIMEOUT_SECONDS),
             hooks,
         };
         Ok(config)
@@ -1632,6 +1641,7 @@ model_verbosity = "high"
                 active_profile: Some("o3".to_string()),
                 disable_paste_burst: false,
                 tui_notifications: Default::default(),
+                idle_timeout_seconds: DEFAULT_IDLE_TIMEOUT_SECONDS,
                 hooks: HooksConfig::default(),
             },
             o3_profile_config
@@ -1691,6 +1701,7 @@ model_verbosity = "high"
             active_profile: Some("gpt3".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            idle_timeout_seconds: DEFAULT_IDLE_TIMEOUT_SECONDS,
             hooks: HooksConfig::default(),
         };
 
@@ -1765,6 +1776,7 @@ model_verbosity = "high"
             active_profile: Some("zdr".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            idle_timeout_seconds: DEFAULT_IDLE_TIMEOUT_SECONDS,
             hooks: HooksConfig::default(),
         };
 
@@ -1825,6 +1837,7 @@ model_verbosity = "high"
             active_profile: Some("gpt5".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            idle_timeout_seconds: DEFAULT_IDLE_TIMEOUT_SECONDS,
             hooks: HooksConfig::default(),
         };
 
@@ -1984,12 +1997,17 @@ fn discover_hooks_with_project_support(
         let project_config_path = git_root.join(".codex/config.toml");
         if let Ok(contents) = std::fs::read_to_string(&project_config_path)
             && let Ok(project_config) = toml::from_str::<ConfigToml>(&contents)
-                && let Some(project_hooks) = project_config.hooks {
-                    // Merge project hooks with global ones
-                    for (name, config) in project_hooks.stop {
-                        hooks.stop.insert(name, config);
-                    }
-                }
+            && let Some(project_hooks) = project_config.hooks
+        {
+            // Merge project hooks with global ones
+            for (name, config) in project_hooks.stop {
+                hooks.stop.insert(name, config);
+            }
+
+            for (name, config) in project_hooks.notification {
+                hooks.notification.insert(name, config);
+            }
+        }
     }
 
     hooks

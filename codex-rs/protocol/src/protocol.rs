@@ -163,6 +163,11 @@ pub enum Op {
     /// Request the list of available custom prompts.
     ListCustomPrompts,
 
+    /// Execute configured notification hooks for the provided event payload.
+    ExecuteNotificationHooks {
+        notification: HookNotificationRequest,
+    },
+
     /// Request the agent to summarize the current conversation context.
     /// The agent will use its existing context (either conversation history or previous response id)
     /// to generate a summary which will be returned as an AgentMessage event.
@@ -173,6 +178,43 @@ pub enum Op {
 
     /// Request to shut down codex instance.
     Shutdown,
+}
+
+/// Indicates which approval flow triggered the notification hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum HookApprovalType {
+    Exec,
+    Patch,
+}
+
+impl HookApprovalType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HookApprovalType::Exec => "exec",
+            HookApprovalType::Patch => "patch",
+        }
+    }
+}
+
+/// Payload emitted by the client layer to trigger notification hooks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum HookNotificationRequest {
+    /// Tool permission request surfaced to the user via an approval modal.
+    ToolPermission {
+        approval_type: HookApprovalType,
+        tool_name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        command: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changes: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+
+    /// Idle timeout fired after the user has not provided input for the configured duration.
+    PromptIdleTimeout { idle_duration_seconds: u64 },
 }
 
 /// Determines the conditions under which the user is consulted to approve

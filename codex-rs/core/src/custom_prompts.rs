@@ -337,7 +337,10 @@ You are tasked with analyzing implementation plans for potential blocking issues
 
         assert_eq!(description, Some("Analyze plans for potential blocking issues by examining codebase, dependencies, and related documents".to_string()));
         assert_eq!(argument_hint, Some("<plan_file(s)_or_NNNN>".to_string()));
-        assert_eq!(filtered_content, "You are tasked with analyzing implementation plans for potential blocking issues by examining the codebase, technical dependencies, related summaries, and research documents.\n\n**Plan input provided:** $1");
+        assert_eq!(
+            filtered_content,
+            "You are tasked with analyzing implementation plans for potential blocking issues by examining the codebase, technical dependencies, related summaries, and research documents.\n\n**Plan input provided:** $1"
+        );
     }
 
     #[test]
@@ -346,8 +349,14 @@ You are tasked with analyzing implementation plans for potential blocking issues
 
         let (description, argument_hint, filtered_content) = parse_frontmatter(content);
 
-        assert_eq!(description, Some("Analyze plans for potential blocking issues".to_string()));
+        assert_eq!(
+            description,
+            Some("Analyze plans for potential blocking issues".to_string())
+        );
         assert_eq!(argument_hint, Some("<plan_file>".to_string()));
-        assert_eq!(filtered_content, "You are tasked with analyzing implementation plans.\r\n\r\n**Plan input provided:** $1");
+        assert_eq!(
+            filtered_content,
+            "You are tasked with analyzing implementation plans.\r\n\r\n**Plan input provided:** $1"
+        );
     }
 }

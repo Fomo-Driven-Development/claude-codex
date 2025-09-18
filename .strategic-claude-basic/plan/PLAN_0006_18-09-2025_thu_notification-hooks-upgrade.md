@@ -183,14 +183,14 @@ fn default_idle_timeout() -> u64 {
 
 #### Automated Verification:
 
-- [ ] Code compiles successfully: `cargo build -p codex-core`
-- [ ] Type checking passes in core: `cargo check -p codex-core`
-- [ ] Unit tests pass: `cargo test -p codex-core`
+- [x] Code compiles successfully: `cargo build -p codex-core`
+- [x] Type checking passes in core: `cargo check -p codex-core`
+- [x] Unit tests pass: `cargo test -p codex-core`
 - [ ] Hook configuration deserialization works with new notification section
 
 #### Manual Verification:
 
-- [ ] `UserNotification` enum serializes new variants to correct JSON format
+- [x] `UserNotification` enum serializes new variants to correct JSON format
 - [ ] Hook configuration loading includes notification hooks in discovery
 - [ ] New notification hook execution method integrated with existing infrastructure
 - [ ] No breaking changes to existing stop hook functionality
@@ -316,9 +316,9 @@ impl ChatWidget {
 
 #### Automated Verification:
 
-- [ ] TUI compiles successfully: `cargo build -p codex-tui`
-- [ ] Type checking passes: `cargo check -p codex-tui`
-- [ ] Integration tests pass: `cargo test -p codex-tui`
+- [x] TUI compiles successfully: `cargo build -p codex-tui`
+- [x] Type checking passes: `cargo check -p codex-tui`
+- [x] Integration tests pass: `cargo test -p codex-tui`
 - [ ] Event communication works between TUI and core layers
 
 #### Manual Verification:
@@ -436,11 +436,11 @@ def handle_idle_timeout(hook_data):
 
 #### Automated Verification:
 
-- [ ] Full system builds successfully: `cargo build --all-features`
-- [ ] All tests pass: `cargo test --all-features`
+- [x] Full system builds successfully: `cargo build --all-features`
+- [x] All tests pass: `cargo test --all-features`
 - [ ] Configuration parsing works with notification hooks: `cargo test config`
 - [ ] Hook discovery includes notification hooks in project configs
-- [ ] Protocol `HookNotificationRequest` converts to `UserNotification` correctly (unit tests in `codex-core`)
+- [x] Protocol `HookNotificationRequest` converts to `UserNotification` correctly (unit tests in `codex-core`)
 
 #### Manual Verification:
 

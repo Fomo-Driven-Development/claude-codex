@@ -49,6 +49,9 @@ fn default_hook_enabled() -> bool {
 pub struct HooksConfig {
     #[serde(default)]
     pub stop: HashMap<String, HookConfig>,
+
+    #[serde(default)]
+    pub notification: HashMap<String, HookConfig>,
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, PartialEq)]
