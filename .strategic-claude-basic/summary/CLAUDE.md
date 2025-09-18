@@ -59,8 +59,9 @@ Where:
 ## Existing Documents
 
 1. **SUMMARY_PLAN_0002_18-09-2025_thu_custom-prompts-argument-support.md** - **Custom Prompts Argument Support Implementation Summary**
+2. **SUMMARY_PLAN_0005_18-09-2025_thu_codex-hooks-implementation.md** - **Codex Hooks Implementation Summary**
 
-Next document number: **0003** (or match existing plan number)
+Next document number: **0006** (or match existing plan number)
 
 ## Instructions for Claude Code
 

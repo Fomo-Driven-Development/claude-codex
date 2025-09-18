@@ -113,8 +113,8 @@ hooks: cfg.hooks.unwrap_or_default(),
 
 #### Automated Verification:
 
-- [ ] Code compiles successfully: `cargo build -p codex-core`
-- [ ] Type checking passes: `cargo check -p codex-core`
+- [x] Code compiles successfully: `cargo build -p codex-core`
+- [x] Type checking passes: `cargo check -p codex-core`
 - [ ] Configuration loads without errors: Unit test for TOML parsing
 
 #### Manual Verification:
@@ -222,7 +222,7 @@ fn execute_hook(&self, hook_name: &str, hook_config: &HookConfig, notification: 
 
 #### Automated Verification:
 
-- [ ] Code compiles successfully: `cargo build -p codex-core`
+- [x] Code compiles successfully: `cargo build -p codex-core`
 - [ ] UserNotification serializes correctly: Unit test for JSON output
 - [ ] Hook execution doesn't block session completion: Integration test
 
@@ -309,9 +309,9 @@ fn execute_hook_with_timeout(&self, hook_config: &HookConfig, json: &str) {
 
 #### Automated Verification:
 
-- [ ] Environment variable expansion works: Unit test for $CODEX_PROJECT_DIR
-- [ ] Timeout handling doesn't block execution: Unit test
-- [ ] Command expansion handles edge cases: Unit test
+- [x] Environment variable expansion works: Unit test for $CODEX_PROJECT_DIR
+- [x] Timeout handling doesn't block execution: Unit test
+- [x] Command expansion handles edge cases: Unit test
 
 #### Manual Verification:
 
@@ -377,9 +377,9 @@ let hooks = discover_hooks_with_project_support(
 
 #### Automated Verification:
 
-- [ ] Project-level config overrides global config: Integration test
-- [ ] Configuration merging works correctly: Unit test
-- [ ] Git root discovery works: Unit test
+- [x] Project-level config overrides global config: Integration test
+- [x] Configuration merging works correctly: Unit test
+- [x] Git root discovery works: Unit test
 
 #### Manual Verification:
 
@@ -446,10 +446,10 @@ enabled = false
 
 #### Automated Verification:
 
-- [ ] All unit tests pass: `cargo test -p codex-core`
+- [x] All unit tests pass: `cargo test -p codex-core`
 - [ ] Integration tests pass: `cargo test -p codex-core hooks_integration`
 - [ ] Example configuration loads: `cargo test -p codex-core config_loading`
-- [ ] Linting passes: `just fix -p codex-core`
+- [x] Linting passes: `just fix -p codex-core`
 
 #### Manual Verification:
 
