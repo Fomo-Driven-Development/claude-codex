@@ -63,7 +63,7 @@ After implementation completion:
 
 **Three-Phase Approach**:
 1. **Core Extensions**: Extend notification types and hook configuration structures
-2. **TUI Integration**: Add trigger points for permission requests and idle timeout detection
+2. **TUI Integration**: Add trigger points for permission requests and idle timeout detection that emit the protocol-level `HookNotificationRequest`; rely on the core conversion layer to populate session-scoped context (cwd, session_id) to avoid stale client data.
 3. **Configuration & Examples**: Update config templates and provide working examples
 
 **Key Design Decisions** (per user requirements):
@@ -76,14 +76,14 @@ After implementation completion:
 
 ### Overview
 
-Extend the core notification system to support tool permission requests and idle timeout events. This phase focuses on the foundational data structures and hook execution integration.
+Extend the core notification system to support tool permission requests and idle timeout events. This phase focuses on the foundational data structures and hook execution integration while avoiding cross-crate type cycles.
 
 ### Changes Required:
 
 #### 1. UserNotification Enum Extension
 
 **File**: `codex-rs/core/src/user_notification.rs`
-**Changes**: Add two new notification variants for permission requests and idle timeout
+**Changes**: Add two new notification variants for permission requests and idle timeout. Keep `UserNotification` scoped to `codex-core`; external crates will interact through a protocol-level struct defined below.
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -111,7 +111,17 @@ pub(crate) enum UserNotification {
 }
 ```
 
-#### 2. Hook Configuration Extension
+#### 2. Hook Notification Payload in Protocol
+
+**File**: `codex-rs/protocol/src/protocol.rs`
+**Changes**: Introduce a new `HookNotificationRequest` enum (public, protocol-friendly) capturing the data the TUI can provide: approval event metadata, idle timeout duration, etc., along with a supporting `HookApprovalType` enum for `exec` vs `patch`. Extend `Op` with `ExecuteNotificationHooks { notification: HookNotificationRequest }`. This keeps protocol types decoupled from core internals and prevents cyclic dependencies.
+
+#### 3. Conversion Layer in Core
+
+**File**: `codex-rs/core/src/codex.rs`
+**Changes**: Handle `Op::ExecuteNotificationHooks` by converting the incoming `HookNotificationRequest` into the appropriate `UserNotification` variant (enriching it with authoritative context such as `session_id`, `cwd`, and approval metadata sourced from the session state to avoid stale TUI data) before invoking hook execution.
+
+#### 4. Hook Configuration Extension
 
 **File**: `codex-rs/core/src/config_types.rs`
 **Changes**: Add notification hooks to `HooksConfig` structure
@@ -127,7 +137,7 @@ pub struct HooksConfig {
 }
 ```
 
-#### 3. Hook Execution Extension
+#### 5. Hook Execution Extension
 
 **File**: `codex-rs/core/src/codex.rs`
 **Changes**: Add notification hook execution method alongside existing stop hooks
@@ -149,7 +159,7 @@ fn maybe_notify_notification_hooks(
 }
 ```
 
-#### 4. Idle Timeout Configuration
+#### 6. Idle Timeout Configuration
 
 **File**: `codex-rs/core/src/config_types.rs`
 **Changes**: Add idle timeout configuration to main config
@@ -198,60 +208,54 @@ Integrate notification hook triggers into the TUI layer at the identified integr
 #### 1. App Event Extension
 
 **File**: `codex-rs/tui/src/app_event.rs`
-**Changes**: Add notification hook event for communication between TUI and core
+**Changes**: Add notification hook event for communication between TUI and core, and forward it in `App::handle_event`
 
 ```rust
 #[derive(Debug)]
 pub(crate) enum AppEvent {
     // ... existing variants
 
-    /// Execute notification hooks with the provided data
+    /// Execute notification hooks with the provided data (core fills session context)
     ExecuteNotificationHooks {
-        notification: codex_core::user_notification::UserNotification,
-        turn_context: TurnContext,
+        notification: codex_protocol::protocol::HookNotificationRequest,
     },
+}
+
+// In App::handle_event
+AppEvent::ExecuteNotificationHooks { notification } => {
+    self.submit_op(Op::ExecuteNotificationHooks { notification });
 }
 ```
 
 #### 2. Approval Request Hook Triggers
 
 **File**: `codex-rs/tui/src/chatwidget.rs`
-**Changes**: Add hook triggers after approval modal display
+**Changes**: Import `HookNotificationRequest`/`HookApprovalType` from the protocol crate and add hook triggers after approval modal display
 
 ```rust
 // In handle_exec_approval_now (after line 544)
 self.notify(Notification::ExecApprovalRequested { command });
 
-// NEW: Trigger notification hook
-if let Some(conversation_id) = &self.conversation_id {
-    let notification = UserNotification::ToolPermissionRequest {
-        session_id: conversation_id.to_string(),
-        cwd: self.config.cwd.to_string_lossy().to_string(),
-        approval_type: "exec".to_string(),
-        tool_name: "Bash".to_string(),
-        command: Some(ev.command.join(" ")),
-        changes: None,
-        reason: ev.reason.clone(),
-    };
-    self.trigger_notification_hook(notification);
-}
+// NEW: Trigger notification hook (core will enrich with session/cwd)
+self.trigger_notification_hook(HookNotificationRequest::ToolPermission {
+    approval_type: HookApprovalType::Exec,
+    tool_name: "Bash".to_string(),
+    command: Some(ev.command.clone()),
+    changes: None,
+    reason: ev.reason.clone(),
+});
 
 // In handle_apply_patch_approval_now (after line 577)
 self.notify(Notification::EditApprovalRequested { cwd, changes });
 
 // NEW: Trigger notification hook
-if let Some(conversation_id) = &self.conversation_id {
-    let notification = UserNotification::ToolPermissionRequest {
-        session_id: conversation_id.to_string(),
-        cwd: self.config.cwd.to_string_lossy().to_string(),
-        approval_type: "patch".to_string(),
-        tool_name: "ApplyPatch".to_string(),
-        command: None,
-        changes: Some(ev.changes.keys().map(|p| p.to_string_lossy().to_string()).collect()),
-        reason: ev.reason.clone(),
-    };
-    self.trigger_notification_hook(notification);
-}
+self.trigger_notification_hook(HookNotificationRequest::ToolPermission {
+    approval_type: HookApprovalType::Patch,
+    tool_name: "ApplyPatch".to_string(),
+    command: None,
+    changes: Some(ev.changes.keys().cloned().collect()),
+    reason: ev.reason.clone(),
+});
 ```
 
 #### 3. Idle Timeout Detection
@@ -283,16 +287,12 @@ loop {
 
 // Add helper method
 async fn handle_idle_timeout(&mut self) -> Result<()> {
-    if let Some(session_id) = self.chat_widget.conversation_id() {
-        let notification = UserNotification::PromptIdleTimeout {
-            session_id: session_id.to_string(),
-            cwd: self.config.cwd.to_string_lossy().to_string(),
-            idle_duration_seconds: self.config.idle_timeout_seconds,
-        };
+    let notification = HookNotificationRequest::PromptIdleTimeout {
+        idle_duration_seconds: self.config.idle_timeout_seconds,
+    };
 
-        // Send to core for hook execution
-        self.submit_op(Op::ExecuteNotificationHooks { notification }).await?;
-    }
+    // Send to core for hook execution; session metadata added server-side
+    self.submit_op(Op::ExecuteNotificationHooks { notification }).await?;
     Ok(())
 }
 ```
@@ -304,17 +304,10 @@ async fn handle_idle_timeout(&mut self) -> Result<()> {
 
 ```rust
 impl ChatWidget {
-    fn trigger_notification_hook(&mut self, notification: UserNotification) {
-        // Create minimal turn context for hooks
-        let turn_context = TurnContext {
-            cwd: self.config.cwd.clone(),
-            // ... other required fields
-        };
-
-        let _ = self.app_event_tx.send(AppEvent::ExecuteNotificationHooks {
-            notification,
-            turn_context,
-        });
+    fn trigger_notification_hook(&mut self, notification: HookNotificationRequest) {
+        let _ = self
+            .app_event_tx
+            .send(AppEvent::ExecuteNotificationHooks { notification });
     }
 }
 ```
@@ -447,6 +440,7 @@ def handle_idle_timeout(hook_data):
 - [ ] All tests pass: `cargo test --all-features`
 - [ ] Configuration parsing works with notification hooks: `cargo test config`
 - [ ] Hook discovery includes notification hooks in project configs
+- [ ] Protocol `HookNotificationRequest` converts to `UserNotification` correctly (unit tests in `codex-core`)
 
 #### Manual Verification:
 
