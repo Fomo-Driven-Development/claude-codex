@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::BufWriter;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -1049,6 +1051,115 @@ impl Session {
             warn!("failed to spawn notifier '{}': {e}", notify_command[0]);
         }
     }
+
+    fn maybe_notify_stop_hooks(&self, hooks_config: &crate::config_types::HooksConfig, turn_context: &TurnContext, notification: UserNotification) {
+        for (hook_name, hook_config) in &hooks_config.stop {
+            if !hook_config.enabled {
+                continue;
+            }
+
+            self.execute_hook(hook_name, hook_config, &notification, turn_context);
+        }
+    }
+
+    fn execute_hook(&self, _hook_name: &str, hook_config: &crate::config_types::HookConfig, notification: &UserNotification, turn_context: &TurnContext) {
+        self.execute_hook_with_timeout(hook_config, notification, turn_context);
+    }
+
+    fn execute_hook_with_timeout(&self, hook_config: &crate::config_types::HookConfig, notification: &UserNotification, turn_context: &TurnContext) {
+        let Ok(json) = serde_json::to_string(notification) else {
+            error!("failed to serialize hook notification");
+            return;
+        };
+
+        let timeout = Duration::from_millis(hook_config.timeout_ms.unwrap_or(60000)); // Default 60s
+
+        let expanded_command = self.expand_hook_command(&hook_config.command, turn_context);
+        let expanded_args = self.expand_hook_args(&hook_config.args, turn_context);
+
+        let mut command = std::process::Command::new(expanded_command);
+        command.args(expanded_args);
+        command.stdin(std::process::Stdio::piped());
+        command.stdout(std::process::Stdio::null());
+        command.stderr(std::process::Stdio::null());
+
+        // Set environment variables
+        if let Some(env) = &hook_config.env {
+            for (key, value) in env {
+                let expanded_value = self.expand_hook_env_var(value, turn_context);
+                command.env(key, expanded_value);
+            }
+        }
+
+        // Set CODEX_PROJECT_DIR for path expansion
+        if let Some(git_root) = crate::git_info::get_git_repo_root(&turn_context.cwd) {
+            command.env("CODEX_PROJECT_DIR", git_root);
+        }
+
+        // Spawn with timeout handling
+        if let Ok(mut child) = command.spawn() {
+            if let Some(stdin) = child.stdin.take() {
+                let _ = Write::write_all(&mut BufWriter::new(stdin), json.as_bytes());
+            }
+
+            // Fire-and-forget with timeout (don't wait)
+            std::thread::spawn(move || {
+                use std::time::Instant;
+
+                let start = Instant::now();
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_status)) => {
+                            // Child has exited
+                            break;
+                        }
+                        Ok(None) => {
+                            // Child is still running
+                            if start.elapsed() >= timeout {
+                                // Timeout reached, kill the child
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                break;
+                            }
+                            std::thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(_) => {
+                            // Error checking child status
+                            break;
+                        }
+                    }
+                }
+            });
+        } else {
+            warn!("failed to spawn hook '{}'", hook_config.command);
+        }
+    }
+
+    fn expand_hook_command(&self, command: &str, turn_context: &TurnContext) -> String {
+        let git_root = crate::git_info::get_git_repo_root(&turn_context.cwd)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| turn_context.cwd.to_string_lossy().to_string());
+
+        command.replace("$CODEX_PROJECT_DIR", &git_root)
+    }
+
+    fn expand_hook_args(&self, args: &[String], turn_context: &TurnContext) -> Vec<String> {
+        let git_root = crate::git_info::get_git_repo_root(&turn_context.cwd)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| turn_context.cwd.to_string_lossy().to_string());
+
+        args.iter()
+            .map(|arg| arg.replace("$CODEX_PROJECT_DIR", &git_root))
+            .collect()
+    }
+
+    fn expand_hook_env_var(&self, value: &str, turn_context: &TurnContext) -> String {
+        let git_root = crate::git_info::get_git_repo_root(&turn_context.cwd)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| turn_context.cwd.to_string_lossy().to_string());
+
+        value.replace("$CODEX_PROJECT_DIR", &git_root)
+    }
 }
 
 impl Drop for Session {
@@ -1093,12 +1204,13 @@ impl AgentTask {
         turn_context: Arc<TurnContext>,
         sub_id: String,
         input: Vec<InputItem>,
+        hooks_config: crate::config_types::HooksConfig,
     ) -> Self {
         let handle = {
             let sess = sess.clone();
             let sub_id = sub_id.clone();
             let tc = Arc::clone(&turn_context);
-            tokio::spawn(async move { run_task(sess, tc, sub_id, input).await }).abort_handle()
+            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await }).abort_handle()
         };
         Self {
             sess,
@@ -1113,12 +1225,13 @@ impl AgentTask {
         turn_context: Arc<TurnContext>,
         sub_id: String,
         input: Vec<InputItem>,
+        hooks_config: crate::config_types::HooksConfig,
     ) -> Self {
         let handle = {
             let sess = sess.clone();
             let sub_id = sub_id.clone();
             let tc = Arc::clone(&turn_context);
-            tokio::spawn(async move { run_task(sess, tc, sub_id, input).await }).abort_handle()
+            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await }).abort_handle()
         };
         Self {
             sess,
@@ -1280,7 +1393,7 @@ async fn submission_loop(
                 if let Err(items) = sess.inject_input(items) {
                     // no current task, spawn a new one
                     let task =
-                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items);
+                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items, config.hooks.clone());
                     sess.set_task(task);
                 }
             }
@@ -1359,7 +1472,7 @@ async fn submission_loop(
 
                     // no current task, spawn a new one with the per‑turn context
                     let task =
-                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items);
+                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items, config.hooks.clone());
                     sess.set_task(task);
                 }
             }
@@ -1613,7 +1726,7 @@ async fn spawn_review_thread(
 
     // Clone sub_id for the upcoming announcement before moving it into the task.
     let sub_id_for_event = sub_id.clone();
-    let task = AgentTask::review(sess.clone(), tc.clone(), sub_id, input);
+    let task = AgentTask::review(sess.clone(), tc.clone(), sub_id, input, crate::config_types::HooksConfig::default());
     sess.set_task(task);
 
     // Announce entering review mode so UIs can switch modes.
@@ -1646,6 +1759,7 @@ async fn run_task(
     turn_context: Arc<TurnContext>,
     sub_id: String,
     input: Vec<InputItem>,
+    hooks_config: &crate::config_types::HooksConfig,
 ) {
     if input.is_empty() {
         return;
@@ -1880,6 +1994,15 @@ async fn run_task(
                     );
                     sess.maybe_notify(UserNotification::AgentTurnComplete {
                         turn_id: sub_id.clone(),
+                        input_messages: turn_input_messages.clone(),
+                        last_assistant_message: last_agent_message.clone(),
+                    });
+
+                    // Execute Stop hooks when agent turn completes
+                    sess.maybe_notify_stop_hooks(hooks_config, &turn_context, UserNotification::AgentTurnStopped {
+                        turn_id: sub_id.clone(),
+                        session_id: sess.conversation_id.to_string(),
+                        cwd: turn_context.cwd.to_string_lossy().to_string(),
                         input_messages: turn_input_messages,
                         last_assistant_message: last_agent_message.clone(),
                     });

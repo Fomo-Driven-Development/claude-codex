@@ -24,6 +24,33 @@ pub struct McpServerConfig {
     pub startup_timeout_ms: Option<u64>,
 }
 
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub struct HookConfig {
+    pub command: String,
+
+    #[serde(default)]
+    pub args: Vec<String>,
+
+    #[serde(default)]
+    pub env: Option<HashMap<String, String>>,
+
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+
+    #[serde(default = "default_hook_enabled")]
+    pub enabled: bool,
+}
+
+fn default_hook_enabled() -> bool {
+    true
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct HooksConfig {
+    #[serde(default)]
+    pub stop: HashMap<String, HookConfig>,
+}
+
 #[derive(Deserialize, Debug, Copy, Clone, PartialEq)]
 pub enum UriBasedFileOpener {
     #[serde(rename = "vscode")]

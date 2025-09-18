@@ -1,0 +1,12 @@
+# Example hooks configuration for Codex
+# This demonstrates how to configure Stop hooks that execute when the agent finishes responding
+
+[hooks.stop.session-notify]
+command = "$CODEX_PROJECT_DIR/.codex/hooks/strategic/stop-session-notify.py"
+timeout_ms = 30000
+enabled = true
+
+[hooks.stop.cleanup]
+command = "echo"
+args = ["Session completed: ${session_id}"]
+enabled = false

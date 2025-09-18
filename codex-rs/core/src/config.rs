@@ -1,5 +1,6 @@
 use crate::config_profile::ConfigProfile;
 use crate::config_types::History;
+use crate::config_types::HooksConfig;
 use crate::config_types::McpServerConfig;
 use crate::config_types::Notifications;
 use crate::config_types::ReasoningSummaryFormat;
@@ -194,6 +195,9 @@ pub struct Config {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: bool,
+
+    /// Hook configuration for session lifecycle events.
+    pub hooks: HooksConfig,
 }
 
 impl Config {
@@ -705,6 +709,10 @@ pub struct ConfigToml {
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.
     pub disable_paste_burst: Option<bool>,
+
+    /// Hook configuration for session lifecycle events.
+    #[serde(default)]
+    pub hooks: Option<HooksConfig>,
 }
 
 impl From<ConfigToml> for UserSavedConfig {
@@ -938,6 +946,12 @@ impl Config {
 
         let history = cfg.history.unwrap_or_default();
 
+        // Discover hooks with project-level support
+        let hooks = discover_hooks_with_project_support(
+            &cfg.hooks.unwrap_or_default(),
+            &resolved_cwd,
+        );
+
         let tools_web_search_request = override_tools_web_search_request
             .or(cfg.tools.as_ref().and_then(|t| t.web_search))
             .unwrap_or(false);
@@ -1053,6 +1067,7 @@ impl Config {
                 .as_ref()
                 .map(|t| t.notifications.clone())
                 .unwrap_or_default(),
+            hooks,
         };
         Ok(config)
     }
@@ -1617,6 +1632,7 @@ model_verbosity = "high"
                 active_profile: Some("o3".to_string()),
                 disable_paste_burst: false,
                 tui_notifications: Default::default(),
+                hooks: HooksConfig::default(),
             },
             o3_profile_config
         );
@@ -1675,6 +1691,7 @@ model_verbosity = "high"
             active_profile: Some("gpt3".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            hooks: HooksConfig::default(),
         };
 
         assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
@@ -1748,6 +1765,7 @@ model_verbosity = "high"
             active_profile: Some("zdr".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            hooks: HooksConfig::default(),
         };
 
         assert_eq!(expected_zdr_profile_config, zdr_profile_config);
@@ -1807,6 +1825,7 @@ model_verbosity = "high"
             active_profile: Some("gpt5".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            hooks: HooksConfig::default(),
         };
 
         assert_eq!(expected_gpt5_profile_config, gpt5_profile_config);
@@ -1952,4 +1971,26 @@ mod notifications_tests {
             Notifications::Custom(ref v) if v == &vec!["foo".to_string()]
         ));
     }
+}
+
+fn discover_hooks_with_project_support(
+    global_hooks: &HooksConfig,
+    project_cwd: &Path,
+) -> HooksConfig {
+    let mut hooks = global_hooks.clone();
+
+    // Project-level hooks override global ones
+    if let Some(git_root) = crate::git_info::get_git_repo_root(project_cwd) {
+        let project_config_path = git_root.join(".codex/config.toml");
+        if let Ok(contents) = std::fs::read_to_string(&project_config_path)
+            && let Ok(project_config) = toml::from_str::<ConfigToml>(&contents)
+                && let Some(project_hooks) = project_config.hooks {
+                    // Merge project hooks with global ones
+                    for (name, config) in project_hooks.stop {
+                        hooks.stop.insert(name, config);
+                    }
+                }
+    }
+
+    hooks
 }
