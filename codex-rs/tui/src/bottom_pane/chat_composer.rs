@@ -419,11 +419,14 @@ impl ChatComposer {
                     // Clear textarea so no residual text remains.
                     self.textarea.set_text("");
                     // Capture any needed data from popup before clearing it.
-                    let prompt_content = match sel {
+                    let (prompt_content, prompt_data, current_args) = match sel {
                         CommandItem::UserPrompt(idx) => {
-                            popup.prompt_content(idx).map(|s| s.to_string())
+                            let content = popup.prompt_content(idx).map(|s| s.to_string());
+                            let prompt = popup.prompts().get(idx).cloned();
+                            let args = popup.current_arguments().to_vec();
+                            (content, prompt, args)
                         }
-                        _ => None,
+                        _ => (None, None, Vec::new()),
                     };
                     // Hide popup since an action has been dispatched.
                     self.active_popup = ActivePopup::None;
@@ -434,7 +437,20 @@ impl ChatComposer {
                         }
                         CommandItem::UserPrompt(_) => {
                             if let Some(contents) = prompt_content {
-                                return (InputResult::Submitted(contents), true);
+                                let processed_content = if !current_args.is_empty() {
+                                    if let Some(prompt) = prompt_data {
+                                        self.process_custom_prompt_with_args(
+                                            &contents,
+                                            &prompt,
+                                            &current_args,
+                                        )
+                                    } else {
+                                        contents
+                                    }
+                                } else {
+                                    contents
+                                };
+                                return (InputResult::Submitted(processed_content), true);
                             }
                             return (InputResult::None, true);
                         }
@@ -1228,6 +1244,27 @@ impl ChatComposer {
 
     pub(crate) fn set_esc_backtrack_hint(&mut self, show: bool) {
         self.esc_backtrack_hint = show;
+    }
+
+    fn process_custom_prompt_with_args(
+        &self,
+        content: &str,
+        _prompt: &CustomPrompt,
+        args: &[String],
+    ) -> String {
+        if args.is_empty() {
+            return content.to_string();
+        }
+
+        // Build argument header
+        let mut result = String::new();
+        for (i, arg) in args.iter().enumerate() {
+            result.push_str(&format!("argument_{}: {}\n", i + 1, arg));
+        }
+        result.push_str("\n");
+        result.push_str(content);
+
+        result
     }
 }
 
@@ -2334,6 +2371,8 @@ mod tests {
             path: "/tmp/my-prompt.md".to_string().into(),
             content: prompt_text.to_string(),
             category: None,
+            template_args: None,
+            template_syntax: None,
         }]);
 
         type_chars_humanlike(

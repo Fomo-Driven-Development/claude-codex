@@ -25,6 +25,7 @@ pub(crate) struct CommandPopup {
     builtins: Vec<(&'static str, SlashCommand)>,
     prompts: Vec<CustomPrompt>,
     state: ScrollState,
+    command_args: Vec<String>,
 }
 
 impl CommandPopup {
@@ -39,6 +40,7 @@ impl CommandPopup {
             builtins,
             prompts,
             state: ScrollState::new(),
+            command_args: Vec::new(),
         }
     }
 
@@ -61,6 +63,16 @@ impl CommandPopup {
         self.prompts.get(idx).map(|p| p.content.as_str())
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn current_arguments(&self) -> &[String] {
+        &self.command_args
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn prompts(&self) -> &[CustomPrompt] {
+        &self.prompts
+    }
+
     /// Update the filter string based on the current composer text. The text
     /// passed in is expected to start with a leading '/'. Everything after the
     /// *first* '/" on the *first* line becomes the active filter that is used
@@ -69,20 +81,22 @@ impl CommandPopup {
         let first_line = text.lines().next().unwrap_or("");
 
         if let Some(stripped) = first_line.strip_prefix('/') {
-            // Extract the *first* token (sequence of non-whitespace
-            // characters) after the slash so that `/clear something` still
-            // shows the help for `/clear`.
+            // Parse the full command line with arguments using shlex with fallback
             let token = stripped.trim_start();
-            let cmd_token = token.split_whitespace().next().unwrap_or("");
+            let tokens = shlex::split(token)
+                .unwrap_or_else(|| token.split_whitespace().map(String::from).collect());
 
-            // Update the filter keeping the original case (commands are all
-            // lower-case for now but this may change in the future).
-            self.command_filter = cmd_token.to_string();
+            // Set the command filter to the first token (command name)
+            self.command_filter = tokens.first().unwrap_or(&String::new()).clone();
+
+            // Store the arguments (everything after the first token)
+            self.command_args = tokens.get(1..).unwrap_or(&[]).to_vec();
         } else {
             // The composer no longer starts with '/'. Reset the filter so the
             // popup shows the *full* command list if it is still displayed
             // for some reason.
             self.command_filter.clear();
+            self.command_args.clear();
         }
 
         // Reset or clamp selected index based on new filtered list.
@@ -114,10 +128,7 @@ impl CommandPopup {
                         name: format!("/{}", self.prompts[i].name),
                         match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                         is_current: false,
-                        description: match &self.prompts[i].category {
-                            Some(category) => Some(format!("send saved prompt ({})", category)),
-                            None => Some("send saved prompt".to_string()),
-                        },
+                        description: self.prompts[i].argument_hint.clone(),
                     },
                 })
                 .collect()
@@ -218,10 +229,7 @@ impl WidgetRef for CommandPopup {
                         name: format!("/{}", self.prompts[i].name),
                         match_indices: indices.map(|v| v.into_iter().map(|i| i + 1).collect()),
                         is_current: false,
-                        description: match &self.prompts[i].category {
-                            Some(category) => Some(format!("send saved prompt ({})", category)),
-                            None => Some("send saved prompt".to_string()),
-                        },
+                        description: self.prompts[i].argument_hint.clone(),
                     },
                 })
                 .collect()
@@ -299,12 +307,16 @@ mod tests {
                 path: "/tmp/foo.md".to_string().into(),
                 content: "hello from foo".to_string(),
                 category: None,
+                template_args: None,
+                template_syntax: None,
             },
             CustomPrompt {
                 name: "bar".to_string(),
                 path: "/tmp/bar.md".to_string().into(),
                 content: "hello from bar".to_string(),
                 category: None,
+                template_args: None,
+                template_syntax: None,
             },
         ];
         let popup = CommandPopup::new(prompts);
@@ -328,6 +340,8 @@ mod tests {
             path: "/tmp/init.md".to_string().into(),
             content: "should be ignored".to_string(),
             category: None,
+            template_args: None,
+            template_syntax: None,
         }]);
         let items = popup.filtered_items();
         let has_collision_prompt = items.into_iter().any(|it| match it {
