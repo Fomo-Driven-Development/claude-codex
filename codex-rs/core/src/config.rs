@@ -947,10 +947,8 @@ impl Config {
         let history = cfg.history.unwrap_or_default();
 
         // Discover hooks with project-level support
-        let hooks = discover_hooks_with_project_support(
-            &cfg.hooks.unwrap_or_default(),
-            &resolved_cwd,
-        );
+        let hooks =
+            discover_hooks_with_project_support(&cfg.hooks.unwrap_or_default(), &resolved_cwd);
 
         let tools_web_search_request = override_tools_web_search_request
             .or(cfg.tools.as_ref().and_then(|t| t.web_search))
@@ -1984,12 +1982,13 @@ fn discover_hooks_with_project_support(
         let project_config_path = git_root.join(".codex/config.toml");
         if let Ok(contents) = std::fs::read_to_string(&project_config_path)
             && let Ok(project_config) = toml::from_str::<ConfigToml>(&contents)
-                && let Some(project_hooks) = project_config.hooks {
-                    // Merge project hooks with global ones
-                    for (name, config) in project_hooks.stop {
-                        hooks.stop.insert(name, config);
-                    }
-                }
+            && let Some(project_hooks) = project_config.hooks
+        {
+            // Merge project hooks with global ones
+            for (name, config) in project_hooks.stop {
+                hooks.stop.insert(name, config);
+            }
+        }
     }
 
     hooks

@@ -1052,7 +1052,12 @@ impl Session {
         }
     }
 
-    fn maybe_notify_stop_hooks(&self, hooks_config: &crate::config_types::HooksConfig, turn_context: &TurnContext, notification: UserNotification) {
+    fn maybe_notify_stop_hooks(
+        &self,
+        hooks_config: &crate::config_types::HooksConfig,
+        turn_context: &TurnContext,
+        notification: UserNotification,
+    ) {
         for (hook_name, hook_config) in &hooks_config.stop {
             if !hook_config.enabled {
                 continue;
@@ -1062,11 +1067,22 @@ impl Session {
         }
     }
 
-    fn execute_hook(&self, _hook_name: &str, hook_config: &crate::config_types::HookConfig, notification: &UserNotification, turn_context: &TurnContext) {
+    fn execute_hook(
+        &self,
+        _hook_name: &str,
+        hook_config: &crate::config_types::HookConfig,
+        notification: &UserNotification,
+        turn_context: &TurnContext,
+    ) {
         self.execute_hook_with_timeout(hook_config, notification, turn_context);
     }
 
-    fn execute_hook_with_timeout(&self, hook_config: &crate::config_types::HookConfig, notification: &UserNotification, turn_context: &TurnContext) {
+    fn execute_hook_with_timeout(
+        &self,
+        hook_config: &crate::config_types::HookConfig,
+        notification: &UserNotification,
+        turn_context: &TurnContext,
+    ) {
         let Ok(json) = serde_json::to_string(notification) else {
             error!("failed to serialize hook notification");
             return;
@@ -1210,7 +1226,8 @@ impl AgentTask {
             let sess = sess.clone();
             let sub_id = sub_id.clone();
             let tc = Arc::clone(&turn_context);
-            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await }).abort_handle()
+            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await })
+                .abort_handle()
         };
         Self {
             sess,
@@ -1231,7 +1248,8 @@ impl AgentTask {
             let sess = sess.clone();
             let sub_id = sub_id.clone();
             let tc = Arc::clone(&turn_context);
-            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await }).abort_handle()
+            tokio::spawn(async move { run_task(sess, tc, sub_id, input, &hooks_config).await })
+                .abort_handle()
         };
         Self {
             sess,
@@ -1392,8 +1410,13 @@ async fn submission_loop(
                 // attempt to inject input into current task
                 if let Err(items) = sess.inject_input(items) {
                     // no current task, spawn a new one
-                    let task =
-                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items, config.hooks.clone());
+                    let task = AgentTask::spawn(
+                        sess.clone(),
+                        Arc::clone(&turn_context),
+                        sub.id,
+                        items,
+                        config.hooks.clone(),
+                    );
                     sess.set_task(task);
                 }
             }
@@ -1471,8 +1494,13 @@ async fn submission_loop(
                     turn_context = Arc::new(fresh_turn_context);
 
                     // no current task, spawn a new one with the per‑turn context
-                    let task =
-                        AgentTask::spawn(sess.clone(), Arc::clone(&turn_context), sub.id, items, config.hooks.clone());
+                    let task = AgentTask::spawn(
+                        sess.clone(),
+                        Arc::clone(&turn_context),
+                        sub.id,
+                        items,
+                        config.hooks.clone(),
+                    );
                     sess.set_task(task);
                 }
             }
@@ -1726,7 +1754,13 @@ async fn spawn_review_thread(
 
     // Clone sub_id for the upcoming announcement before moving it into the task.
     let sub_id_for_event = sub_id.clone();
-    let task = AgentTask::review(sess.clone(), tc.clone(), sub_id, input, crate::config_types::HooksConfig::default());
+    let task = AgentTask::review(
+        sess.clone(),
+        tc.clone(),
+        sub_id,
+        input,
+        crate::config_types::HooksConfig::default(),
+    );
     sess.set_task(task);
 
     // Announce entering review mode so UIs can switch modes.
@@ -1999,13 +2033,17 @@ async fn run_task(
                     });
 
                     // Execute Stop hooks when agent turn completes
-                    sess.maybe_notify_stop_hooks(hooks_config, &turn_context, UserNotification::AgentTurnStopped {
-                        turn_id: sub_id.clone(),
-                        session_id: sess.conversation_id.to_string(),
-                        cwd: turn_context.cwd.to_string_lossy().to_string(),
-                        input_messages: turn_input_messages,
-                        last_assistant_message: last_agent_message.clone(),
-                    });
+                    sess.maybe_notify_stop_hooks(
+                        hooks_config,
+                        &turn_context,
+                        UserNotification::AgentTurnStopped {
+                            turn_id: sub_id.clone(),
+                            session_id: sess.conversation_id.to_string(),
+                            cwd: turn_context.cwd.to_string_lossy().to_string(),
+                            input_messages: turn_input_messages,
+                            last_assistant_message: last_agent_message.clone(),
+                        },
+                    );
                     break;
                 }
                 continue;
