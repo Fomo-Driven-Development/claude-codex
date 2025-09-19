@@ -177,7 +177,10 @@ impl CommandPopup {
                     }
                     CommandItem::UserPrompt(i) => (
                         format!("/{}", self.prompts[i].name),
-                        self.prompts[i].argument_hint.clone().unwrap_or_else(|| "send saved prompt".to_string()),
+                        self.prompts[i]
+                            .argument_hint
+                            .clone()
+                            .unwrap_or_else(|| "send saved prompt".to_string()),
                     ),
                 };
                 GenericDisplayRow {
