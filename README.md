@@ -2,8 +2,12 @@
 <p align="center">Terminal-first coding agent tuned for Claude workflows.</p>
 
 <p align="center">
-  <img src="./.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
+  <img src="demo.gif" alt="Codex CLI Demo" width="80%" />
 </p>
+
+**Demo highlights:**
+- **Slash command discovery:** Type `/` to browse locally-scoped prompts with Tab completion
+- **Natural argument passing:** Use commands like `/tell_me_a_joke_about gpt-5-codex` with Claude Code-style argument parsing
 
 > [!NOTE]
 > Claude Codex extends the upstream <a href="https://github.com/openai/codex">openai/codex</a> project. Follow the upstream repository for the canonical feature list; this README focuses on the extras maintained in this fork.
